@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>QuickView · Settings</title><link rel="stylesheet" href="settings.css"><script src="shared.js" defer></script><script src="settings.js" defer></script></head>
+<body>
+<div class="shell">
+  <header><a class="brand" href="settings.html" aria-label="QuickView settings"><svg viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="12" fill="#5b58eb"/><path d="M8 20s4-7 12-7 12 7 12 7-4 7-12 7S8 20 8 20Z" fill="none" stroke="white" stroke-width="2"/><circle cx="20" cy="20" r="4" fill="white"/></svg><span>QuickView<small>FOR SALESFORCE</small></span></a><div class="header-right"><span class="version">v0.0.1</span><label class="theme-control"><span>Theme</span><select id="theme" aria-label="Color theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select></label></div></header>
+  <main>
+    <div class="intro"><div class="eyebrow">A CLOSER LOOK, ONE HOVER AWAY</div><h1>A little preview.<br>A smoother workflow.</h1><p>See what’s attached without leaving the case.<br>Make the preview feel right for you.</p></div>
+    <div class="workspace">
+      <form id="settings" class="controls">
+        <section class="card enable-card"><div><h2>Hover previews</h2><p>Your files, at a glance.</p></div><label class="switch"><input id="enabled" type="checkbox" checked aria-label="Enable hover previews"><span></span></label></section>
+        <section class="card"><div class="section-heading"><span class="section-number">01</span><div><h2>Size & timing</h2><p>Room for detail. A moment to settle.</p></div></div>
+          <div class="field"><label for="scale">Preview size <output for="scale" id="scale-value"></output></label><input id="scale" type="range" min="50" max="500" step="5"><div class="range-labels"><span>50% · Compact</span><span>500% · Largest</span></div><p class="hint">100% = 520 × 380 px. Larger previews fit available screen space.</p></div>
+          <div class="field"><label for="delay">Hover delay <output for="delay" id="delay-value"></output></label><input id="delay" type="range" min="0" max="1500" step="50"><div class="range-labels"><span>Immediate</span><span>Deliberate</span></div></div>
+        </section>
+        <section class="card"><div class="section-heading"><span class="section-number">02</span><div><h2>Finishing touches</h2><p>A frame that fits your workspace.</p></div></div>
+          <div class="setting-row animation-setting"><label for="animation">Preview animation</label><select id="animation"><option value="none">None (default)</option><option value="fade">Fade in / out</option><option value="fall">Fall in</option><option value="scale-up">Scale up</option><option value="scale-down">Scale down</option></select></div><p class="hint motion-hint">Respects your system’s reduced-motion preference.</p>
+          <div class="field"><label for="radius">Corner radius <output for="radius" id="radius-value"></output></label><input id="radius" type="range" min="0" max="32"></div>
+          <div class="field"><label for="borderWidth">Border width <output for="borderWidth" id="borderWidth-value"></output></label><input id="borderWidth" type="range" min="0" max="6"></div>
+          <div class="setting-row"><label for="borderColor">Border color</label><div class="color-control"><span id="color-value"></span><input id="borderColor" type="color" aria-label="Border color"></div></div>
+          <div class="setting-row"><label for="shadow">Soft shadow</label><label class="switch"><input id="shadow" type="checkbox"><span></span></label></div>
+          <div class="setting-row"><label for="showName">Show file name</label><label class="switch"><input id="showName" type="checkbox"><span></span></label></div>
+        </section>
+        <section class="card"><div class="section-heading"><span class="section-number">03</span><div><h2>Less in the way</h2><p>Keep the preview easy to see.</p></div></div><div class="setting-row"><div><label for="suppressTooltip">Hide browser tooltips</label><p class="hint">Temporarily removes native file-title tooltips.<br>Salesforce’s custom tooltips may still appear.</p></div><label class="switch"><input id="suppressTooltip" type="checkbox"><span></span></label></div></section>
+        <div class="actions"><button class="reset" id="reset" type="button">Restore defaults</button><span id="save-status" role="status" aria-live="polite">Settings saved locally</span></div>
+      </form>
+      <aside class="preview-column"><div class="preview-sticky"><div class="preview-heading"><span class="eyebrow">LIVE PREVIEW</span><button type="button" id="replay" class="replay">Replay animation ↻</button></div><div class="scene-switcher" role="group" aria-label="Salesforce preview background"><button type="button" data-scene="files" aria-pressed="true">Cases → Files</button><button type="button" data-scene="feed" aria-pressed="false">Feed → Email</button></div><div class="stage"><div class="preview-scene" data-scene="files"><img id="scene-background" src="assets/salesforce-files-masked.png" alt="Masked Salesforce Cases Files page"><div class="preview-wrap"><div id="sample-preview"><div class="sample-image"><img src="icons/sample.svg" alt="Fictional diagnostic dashboard preview"></div><div class="sample-name">image</div></div></div></div><div class="stage-caption" id="preview-caption">Masked Salesforce screenshot · Dummy preview</div></div><div class="preview-note"><span class="note-icon">↗</span><div><strong>Stay in the flow</strong><p>Hover a file name to preview it. Move away or press Esc to dismiss. Click as usual to open the file.</p></div></div><div class="privacy-note">No analytics. No uploads. Settings stay in this browser.</div></div></aside>
+    </div>
+  </main>
+  <footer><span>QuickView for Salesforce <span class="footer-dot">·</span> v0.0.1</span><span>Concept by <a href="https://github.com/jorgestocker" target="_blank" rel="noopener noreferrer">@jorgestocker</a></span></footer>
+</div>
+</body></html>

@@ -1,0 +1,40 @@
+# Dependencies and build archives
+node_modules/
+dist/
+
+# Tests, coverage, and browser artifacts
+test-results/
+playwright-report/
+playwright/.cache/
+coverage/
+
+# Local environment and Python caches
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Temporary files, logs, and caches
+.cache/
+tmp/
+temp/
+*.log
+*.tmp
+*.swp
+*.swo
+
+# Editor and operating-system files
+.idea/
+.vscode/
+.DS_Store
+._*
+Thumbs.db
+
+# Local documentation notes
+/docs/LIVE-ORG-CHECKLIST.md
+/docs/README-IMAGE.md
+
+# Keep README screenshots, extension assets, and package-lock.json tracked.

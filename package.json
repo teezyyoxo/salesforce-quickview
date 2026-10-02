@@ -1,0 +1,17 @@
+{
+  "name": "salesforce-quickview",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Hover previews for Salesforce Files",
+  "scripts": {
+    "test": "node --test tests/shared.test.cjs",
+    "test:browser": "node tests/browser.cjs",
+    "demo": "node scripts/serve.cjs",
+    "package": "python3 scripts/package.py",
+    "test:extension": "node tests/extension.cjs",
+    "screenshots": "node scripts/screenshots.cjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.0"
+  }
+}
