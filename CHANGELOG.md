@@ -2,6 +2,33 @@
 
 All notable changes to QuickView for Salesforce are recorded here.
 
+## [0.0.2] — 2026-10-02
+
+### Fixed
+
+- Replace the failing internal Aura preview-provider lookup with a same-origin UI record API request for `ContentDocument.LatestPublishedVersionId`. Validate the document identity and version prefix before requesting a thumbnail; report API status and metadata failures separately. PowerPoint hover previews are confirmed working in the project owner’s org.
+- Metadata waits time out, dismissals detach pending listeners, and stale responses cannot replace another file’s preview.
+
+### Added
+
+- Targeted Files diagnostics list all matching record field names and masked reference shapes, avoiding the generic diagnostic’s 40-field display limit.
+
+- First-page Salesforce rendition previews for PowerPoint (`ppt`, `pptx`), Word (`doc`, `docx`), Excel (`xls`, `xlsx`), and PDF; RTF/OpenDocument files attempt the same rendition route.
+- CSV table excerpts, formatted JSON, and plain text previews for TXT, LOG, MD, XML, and YAML files. Reads stop at 256 KiB; excerpts are bounded and report truncation.
+- Read-only Files-row Aura metadata lookup for a document’s matching latest version; records belonging to other files are ignored.
+- Cancellation of pending text loads on dismissal, safe text-only rendering, and regression checks for parsing, byte limits, Office metadata, and archive exclusion.
+
+### Changed
+
+- ZIP and other archive previews are explicitly excluded and never request a rendition or original file.
+- Extension manifest, settings version labels, npm package/lockfile, and release archive updated to 0.0.2.
+
+### Limitations
+
+- Office previews require an accessible version reference or existing rendition URL and a generated Salesforce thumbnail. They show the first page only; Office binaries are not parsed locally.
+- Text previews require readable authenticated UTF-8 responses; cross-domain restrictions and org download policies can prevent access.
+- Regression fixtures cover Office and text paths. PowerPoint hover previews are also confirmed in the project owner’s org; other Office formats still need live-org confirmation.
+
 ## [0.0.1] — 2026-10-02
 
 ### Fixed

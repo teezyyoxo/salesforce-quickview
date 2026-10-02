@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "QuickView for Salesforce",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Preview Salesforce Files on hover. Customize preview size, borders, and appearance.",
   "permissions": [
     "storage"
@@ -47,6 +47,7 @@
       ],
       "js": [
         "shared.js",
+        "text-preview.js",
         "content.js"
       ],
       "run_at": "document_idle"

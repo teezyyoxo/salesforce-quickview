@@ -5,6 +5,7 @@
   const Q = globalThis.QuickView;
   let settings = Q.normalize(), active = null, timer, loadTimer, generation = 0, point = { x: 0, y: 0 };
   let host, panel, image, status, name, media, motion, closing = false;
+  let textView, textNotice, textController, metadataController;
   const titles = new Map();
   const systemDark = matchMedia('(prefers-color-scheme: dark)');
 
@@ -38,12 +39,10 @@
     const title = anchor.dataset.fileName || attachment?.dataset.fileName || anchor.querySelector('.slds-file__text, .slds-truncate')?.textContent.trim() || anchor.textContent.trim() || anchor.getAttribute('title') || anchor.getAttribute('aria-label') || 'File preview';
     const signals = [title, anchor.dataset.fileType, row?.dataset.fileType];
     row?.querySelectorAll('svg use, img, [data-key], [data-doctype]').forEach(node => signals.push(node.getAttribute('href'), node.getAttribute('xlink:href'), node.getAttribute('alt'), node.getAttribute('data-key'), node.getAttribute('data-doctype')));
-    const raster = /\.(png|jpe?g|gif|webp|bmp|avif)(?:$|\s)/i.test(title) || /(?:^|[\s/#_-])(?:image|png|jpe?g|gif|webp|bmp|avif)(?:$|[\s_-])/i.test(signals.filter(Boolean).join(' '));
-    // Known document types and SVG never use the original-image fallback.
-    const nonRaster = /\.(svg|pdf|zip|csv|docx?|xlsx?|pptx?|txt|html?)(?:$|\s)/i.test(title);
+    const kind = Q.kind(title, signals.filter(Boolean).join(' '));
     const versionId = Q.fileId(anchor.dataset.versionId || anchor.dataset.contentVersionId || row?.dataset.versionId || row?.dataset.contentVersionId);
     const existingURL = anchor.getAttribute('href')?.includes('/renditionDownload') ? anchor.getAttribute('href') : row?.querySelector('img[src*="/sfc/servlet.shepherd/"], a[href*="/renditionDownload"]')?.getAttribute('src') || row?.querySelector('a[href*="/renditionDownload"]')?.getAttribute('href');
-    return { anchor, row, id, title, aura, image: raster && !nonRaster, versionId, existingURL };
+    return { anchor, row, id, title, aura, kind, image: kind === 'image', versionId, existingURL };
   }
   function suppress(file) {
     if (!settings.suppressTooltip) return;
@@ -70,11 +69,16 @@
       :host{color-scheme:light dark} *{box-sizing:border-box}
       .panel{font:13px/1.5 system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--fg);overflow:hidden;border:var(--border) solid var(--edge);border-radius:var(--radius);box-shadow:var(--shadow)}
       .media{display:flex;align-items:center;justify-content:center;padding:12px;overflow:hidden;min-height:0}
-      img{display:block;width:100%;height:100%;max-width:100%;max-height:100%;object-fit:contain} img[hidden],p[hidden]{display:none}
+      img{display:block;width:100%;height:100%;max-width:100%;max-height:100%;object-fit:contain} [hidden]{display:none!important}
       p{margin:12px;text-align:center;color:var(--muted);max-width:300px}
+      .text-view{align-self:stretch;width:100%;overflow:hidden;display:flex;flex-direction:column;gap:10px}
+      pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 ui-monospace,monospace;overflow:hidden}
+      table{border-collapse:collapse;width:100%;table-layout:fixed;font-size:12px}td,th{padding:6px 8px;border:1px solid var(--edge);text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;max-height:100px}th{font-weight:650;background:color-mix(in srgb,var(--fg) 6%,var(--bg))}
+      .text-notice{font-size:11px;color:var(--muted);flex-shrink:0}.excerpt{overflow:hidden;min-height:0}
       .name{padding:10px 14px;border-top:1px solid var(--edge);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:550}
-    </style><div class="panel" role="tooltip"><div class="media"><img hidden alt=""><p role="status"></p></div><div class="name"></div></div>`;
+    </style><div class="panel" role="tooltip"><div class="media"><img hidden alt=""><div class="text-view" hidden><div class="text-notice"></div><div class="excerpt"></div></div><p role="status"></p></div><div class="name"></div></div>`;
     panel = shadow.querySelector('.panel'); image = shadow.querySelector('img'); status = shadow.querySelector('p'); name = shadow.querySelector('.name'); media = shadow.querySelector('.media');
+    textView = shadow.querySelector('.text-view'); textNotice = shadow.querySelector('.text-notice');
     document.documentElement.append(host);
   }
   function appearance() {
@@ -105,6 +109,8 @@
   }
   function hide(immediate = false) {
     clearTimeout(timer); clearTimeout(loadTimer); generation++;
+    textController?.abort(); textController = null;
+    metadataController?.abort(); metadataController = null;
     active = null; restoreTitles();
     if (image) { image.onload = null; image.onerror = null; }
     if (closing && immediate !== true) return;
@@ -113,13 +119,14 @@
       cancelMotion();
       if (host) host.style.display = 'none';
       if (image) image.removeAttribute('src');
+      if (textView) { textView.hidden = true; textView.querySelector('.excerpt').replaceChildren(); textNotice.textContent = ''; }
     }
     if (immediate !== true && host?.style.display === 'block') motion = Q.animate(panel, settings.animation, true);
     if (motion) { closing = true; motion.onfinish = finish; }
     else finish();
   }
-  function show(file) {
-    if (active !== file || !file.anchor.isConnected) return hide();
+  async function show(file) {
+    if (!file || active !== file || !file.anchor.isConnected) return hide();
     if (file.aura) {
       const receive = event => {
         try {
@@ -133,11 +140,60 @@
       file.anchor.removeEventListener('quickview-aura-result', receive);
     }
     build(); cancelMotion(); const token = ++generation;
+    textView.hidden = true; textView.querySelector('.excerpt').replaceChildren();
     image.hidden = true; status.hidden = false; status.textContent = 'Loading preview…';
-    name.textContent = file.title; image.alt = `Preview of ${file.title}`;
+    name.textContent = file.kind === 'document' ? `${file.title} · First-page preview` : file.title; image.alt = `Preview of ${file.title}`;
     host.style.display = 'block'; appearance();
     motion = Q.animate(panel, settings.animation);
     if (motion) motion.onfinish = cancelMotion;
+    if (file.kind === 'document' && file.id?.startsWith('069') && !file.versionId && !file.existingURL) {
+      metadataController = new AbortController();
+      const controller = metadataController, requestId = crypto.randomUUID();
+      const result = await new Promise(resolve => {
+        let timeout;
+        const finish = value => {
+          clearTimeout(timeout); file.anchor.removeEventListener('quickview-file-result', receive);
+          controller.signal.removeEventListener('abort', cancelled); resolve(value);
+        };
+        const cancelled = () => finish(null);
+        const receive = event => {
+          try { const value = JSON.parse(event.detail); if (value.requestId === requestId) finish(value); } catch { /* Ignore malformed page events. */ }
+        };
+        file.anchor.addEventListener('quickview-file-result', receive);
+        controller.signal.addEventListener('abort', cancelled, { once: true });
+        timeout = setTimeout(() => finish(null), 9000);
+        file.anchor.dispatchEvent(new CustomEvent('quickview-file-request', { bubbles: true, detail: JSON.stringify({ id: file.id, requestId }) }));
+      });
+      if (generation !== token || active !== file) return;
+      metadataController = null;
+      file.versionId = Q.fileId(result?.versionId);
+      file.existingURL = Q.safeURL(result?.previewURL);
+    }
+    if (['csv', 'json', 'text'].includes(file.kind)) {
+      const url = Q.originalURL(file.versionId || file.id);
+      if (!url) { status.textContent = 'Attachment reference unavailable. Click the file to open Salesforce’s viewer.'; return; }
+      textController = new AbortController();
+      const controller = textController;
+      loadTimer = setTimeout(() => controller.abort(), 10000);
+      QuickViewText.read(url, controller.signal).then(result => {
+        if (generation !== token) return;
+        const formatted = QuickViewText.format(result.text, file.kind, result.truncated);
+        const excerpt = textView.querySelector('.excerpt');
+        if (formatted.rows) {
+          const table = document.createElement('table');
+          for (const [rowIndex, row] of formatted.rows.entries()) {
+            const tr = document.createElement('tr');
+            for (const value of row) { const cell = document.createElement(rowIndex ? 'td' : 'th'); cell.textContent = value; tr.append(cell); }
+            table.append(tr);
+          }
+          excerpt.append(table);
+        } else { const pre = document.createElement('pre'); pre.textContent = formatted.text; excerpt.append(pre); }
+        textNotice.textContent = formatted.notice;
+        textView.hidden = false; status.hidden = true;
+      }).catch(() => { if (generation === token) status.textContent = 'Text preview unavailable. Click the file to open Salesforce’s viewer.'; })
+        .finally(() => { if (generation === token) { clearTimeout(loadTimer); textController = null; } });
+      return;
+    }
     const urls = Q.sources({ ...file, scale: settings.scale });
     let index = 0;
     function diagnose(stage) {
@@ -147,7 +203,7 @@
     function unavailable() {
       clearTimeout(loadTimer); image.hidden = true; image.removeAttribute('src');
       diagnose(urls.length ? 'image-load-failed' : 'no-file-reference');
-      status.hidden = false; status.textContent = urls.length ? 'Image could not be loaded. Click the file to open Salesforce’s viewer.' : 'Attachment reference unavailable. Click the file to open Salesforce’s viewer.';
+      status.hidden = false; status.textContent = file.kind === 'archive' ? 'Archive previews are not supported. Click the file to open it.' : urls.length ? 'Preview unavailable: image or rendition could not be loaded. Click the file to open Salesforce’s viewer.' : file.kind === 'document' ? 'Preview unavailable: document version or rendition is unavailable. Click the file to open Salesforce’s viewer.' : file.aura ? 'Attachment reference unavailable. Click the file to open Salesforce’s viewer.' : 'Preview unavailable. Click the file to open Salesforce’s viewer.';
     }
     function attempt() {
       if (generation !== token) return;

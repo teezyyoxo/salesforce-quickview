@@ -27,7 +27,7 @@ test('existing URLs reject external hosts, credentials, scripts and non-Salesfor
 test('extension declares only local settings permission, all bundled paths exist', () => {
   const fs = require('node:fs'), path = require('node:path');
   const manifest = require('../extension/manifest.json');
-  assert.equal(manifest.version, '0.0.1'); assert.deepEqual(manifest.permissions, ['storage']);
+  assert.equal(manifest.version, '0.0.2'); assert.deepEqual(manifest.permissions, ['storage']);
   for (const file of [...manifest.content_scripts.flatMap(script => script.js), manifest.background.service_worker, manifest.options_ui.page, ...Object.values(manifest.icons)]) assert.ok(fs.existsSync(path.join(__dirname, '../extension', file)), file);
 });
 
@@ -63,4 +63,48 @@ test('preview sizing uses original viewport coordinates and fits large cards', (
   const largest = Q.previewSize(Q.normalize({ scale: 500 }), 1440, 1050);
   assert.equal(largest.width, 1416);
   assert.equal(largest.height + 40.5 + 2, 1026);
+});
+
+test('document classification recognizes Office formats and excludes archives', () => {
+  for (const extension of ['ppt', 'pptx', 'doc', 'docx', 'xls', 'xlsx', 'pdf']) {
+    assert.equal(Q.kind(`sample.${extension}`), 'document');
+    const urls = Q.sources({ id: '068000000000021', kind: 'document' }, base);
+    assert.equal(urls.length, 1); assert.match(urls[0], /renditionDownload/);
+  }
+  assert.equal(Q.kind('Deck', '/doctype#ppt'), 'document');
+  assert.equal(Q.kind('notes', '/doctype#txt'), 'text');
+  assert.equal(Q.kind('report', '/doctype#csv'), 'csv');
+  assert.equal(Q.kind('Screenshot at 11.03.37', '/doctype#image'), 'image');
+  assert.equal(Q.kind('file.json', '#image'), 'json');
+  assert.equal(Q.kind('file.svg', '#image'), 'unknown');
+  assert.deepEqual(Q.sources({ id: '068000000000021', kind: 'archive' }, base), []);
+  assert.equal(Q.originalURL('500000000000001', base), null);
+});
+require('../extension/text-preview.js');
+const T = globalThis.QuickViewText;
+test('CSV handles multiline fields, escaped quotes and inert formulas', () => {
+  const result = T.csv('name,value\r\n"A, B","line 1\nline 2"\r\n"quoted ""text""",=SUM(A1:A2)');
+  assert.deepEqual(result.rows, [['name','value'], ['A, B','line 1\nline 2'], ['quoted "text"','=SUM(A1:A2)']]);
+  assert.equal(result.trimmed, false);
+  assert.equal(T.csv('a,b,c\n1,2,3', 21, 2).trimmed, true);
+});
+test('JSON formatting and excerpts are bounded and preserve literal markup', () => {
+  assert.match(T.format('{"message":"<script>alert(1)</script>"}', 'json', false).text, /<script>/);
+  assert.match(T.format('{broken', 'json', false).notice, /Invalid JSON/);
+  assert.match(T.format('{broken', 'json', true).notice, /256 KiB/);
+  const text = T.format('a'.repeat(30000), 'text', false);
+  assert.equal(text.text.length, 20000); assert.match(text.notice, /limited/);
+});
+test('stream reader stops at its byte budget and rejects login HTML', async () => {
+  const previous = globalThis.fetch; let cancelled = false;
+  try {
+    globalThis.fetch = async () => new Response(new ReadableStream({
+      pull(controller) { controller.enqueue(new Uint8Array(T.limit + 10).fill(65)); },
+      cancel() { cancelled = true; }
+    }), { headers: { 'content-type': 'text/plain' } });
+    const result = await T.read(base, new AbortController().signal);
+    assert.equal(result.text.length, T.limit); assert.equal(result.truncated, true); assert.equal(cancelled, true);
+    globalThis.fetch = async () => new Response('<html>login</html>', { headers: { 'content-type': 'text/html' } });
+    await assert.rejects(T.read(base, new AbortController().signal));
+  } finally { globalThis.fetch = previous; }
 });

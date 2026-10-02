@@ -30,10 +30,10 @@ const assert = require('node:assert/strict');
     assert.equal(await settings.locator('.sample-image img').evaluate(image => image.complete && image.naturalWidth > 0), true);
     const fixture = await context.newPage();
     fixture.on('pageerror', error => errors.push(error.message));
-    let downloads = 0;
+    let downloads = 0; const previewRequests = [];
     await context.route('https://quickview-fixture.lightning.force.com/**', route => {
       const pathname = new URL(route.request().url()).pathname;
-      if (pathname.startsWith('/sfc/') || pathname === '/servlet/servlet.FileDownload') { downloads++; return route.fulfill({ contentType: 'image/svg+xml', body: fs.readFileSync(path.join(root, 'demo/sample.svg')) }); }
+      if (pathname.startsWith('/sfc/') || pathname === '/servlet/servlet.FileDownload') { downloads++; previewRequests.push(route.request().url()); return route.fulfill({ contentType: 'image/svg+xml', body: fs.readFileSync(path.join(root, 'demo/sample.svg')) }); }
       const html = fs.readFileSync(path.join(root, 'demo/index.html'), 'utf8').replace(/<script[^>]*><\/script>/g, '');
       return route.fulfill({ contentType: 'text/html', body: html });
     });
@@ -94,6 +94,102 @@ const assert = require('node:assert/strict');
     assert.ok(diagnostic.fields.some(field => field.attributeNames.includes('items')));
     assert.ok(!JSON.stringify(diagnostic).includes('068000000000021'));
     assert.ok(!JSON.stringify(diagnostic).includes('image001.png'));
+    await fixture.keyboard.press('Escape');
+    // Files-tab Office links expose a document ID; Aura supplies the matching latest version.
+    await fixture.evaluate(() => {
+      const record = { Id: '069000000000041', ...Object.fromEntries(Array.from({ length: 45 }, (_, i) => [`field${i}`, 'private value'])), LatestPublishedVersionId: '068000000000041' };
+      const owner = { getDef: () => ({ getAttributeDefs: () => ({ getNames: () => ['records'] }) }), get: key => key === 'v.records' ? [
+        { Id: '069000000000040', LatestPublishedVersionId: '068000000000040' }, record
+      ] : null };
+      window.$A = { getComponent: () => owner };
+      document.querySelector('tbody').insertAdjacentHTML('beforeend', '<tr data-file-type="PPT" data-aura-rendered-by="files"><td><a id="office-file" href="/lightning/r/ContentDocument/069000000000041/view">Case presentation</a></td></tr>');
+    });
+    await fixture.locator('#office-file').scrollIntoViewIfNeeded(); await fixture.waitForTimeout(200);
+    for (const title of ['Case presentation', 'slides.ppt', 'slides.pptx', 'summary.doc', 'summary.docx', 'report.xls', 'report.xlsx']) {
+      await fixture.locator('#office-file').evaluate((node, title) => node.textContent = title, title);
+      await fixture.mouse.move(5, 5);
+      await fixture.locator('#office-file').hover();
+      await fixture.waitForFunction(() => document.querySelector('#quickview-salesforce')?.style.display === 'block');
+      await fixture.waitForTimeout(350);
+      await fixture.keyboard.press('Escape');
+    }
+    const resolvedDiagnostic = JSON.parse(await fixture.evaluate(() => window.quickViewDiagnoseFile()));
+    assert.equal(resolvedDiagnostic.lookup.resolved, true);
+    assert.ok(resolvedDiagnostic.matchingRecords.some(record => record.fieldNames.includes('LatestPublishedVersionId')));
+    assert.ok(!JSON.stringify(resolvedDiagnostic).includes('private value'));
+    assert.ok(!JSON.stringify(resolvedDiagnostic).includes('068000000000041'));
+    assert.ok(previewRequests.some(url => url.includes('versionId=068000000000041')), 'Files document ID resolves its matching version');
+    assert.ok(!previewRequests.some(url => /download\/069000000000041/.test(url)), 'Office originals must not be downloaded as images');
+    // Lookup must ignore other documents even when they have valid versions.
+    await fixture.locator('#office-file').evaluate(node => { node.href = '/lightning/r/ContentDocument/069000000000049/view'; });
+    await fixture.mouse.move(5, 5);
+    const beforeUnmatched = downloads;
+    await fixture.locator('#office-file').hover(); await fixture.waitForTimeout(400);
+    assert.equal(downloads, beforeUnmatched);
+    const fileDiagnostic = JSON.parse(await fixture.evaluate(() => window.quickViewDiagnoseFile()));
+    assert.equal(fileDiagnostic.lookup.resolved, false);
+    assert.ok(!JSON.stringify(fileDiagnostic).includes('069000000000041'));
+    await fixture.keyboard.press('Escape');
+    // Real UI API response shape, requested for exactly one document/version field.
+    // Internal Aura component creation is unavailable in the live org and must not be used.
+    await context.route('https://quickview-fixture.lightning.force.com/services/data/v65.0/ui-api/records/**', async route => {
+      const url = new URL(route.request().url());
+      assert.equal(url.searchParams.get('fields'), 'ContentDocument.LatestPublishedVersionId');
+      assert.equal(route.request().method(), 'GET');
+      const recordId = url.pathname.split('/').pop();
+      const { mode, delay } = await fixture.evaluate(() => ({ mode: window.fixturePreviewMode, delay: window.fixturePreviewDelay || 150 }));
+      await new Promise(resolve => setTimeout(resolve, delay));
+      if (mode === 'forbidden') return route.fulfill({ status: 403, contentType: 'application/json', body: '[{"errorCode":"INSUFFICIENT_ACCESS"}]' });
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+        id: mode === 'mismatch' ? '069000000000099' : recordId, apiName: 'ContentDocument',
+        fields: { LatestPublishedVersionId: { value: mode === 'no-version' ? null : mode === 'bad-version' ? '069000000000061' : recordId.replace('069', '068') } }
+      }) });
+    });
+    await fixture.evaluate(() => {
+      window.fixturePreviewMode = 'success';
+      window.$A.getDefinition = window.$A.createComponent = () => { throw new Error('Internal provider must not be used'); };
+      document.querySelector('tbody').insertAdjacentHTML('beforeend', '<tr data-file-type="PPT"><td><a id="native-office" href="/lightning/r/ContentDocument/069000000000061/view">Native deck.pptx</a></td></tr>');
+    });
+    await fixture.locator('#native-office').scrollIntoViewIfNeeded(); await fixture.waitForTimeout(200);
+    const nativeRequest = fixture.waitForResponse(response => response.url().includes('versionId=068000000000061'), { timeout: 5000 });
+    await fixture.locator('#native-office').hover();
+    await nativeRequest;
+    assert.ok(previewRequests.some(url => url.includes('versionId=068000000000061') && url.includes('rendition=THUMB720BY480')));
+    assert.ok(!previewRequests.some(url => url.includes('/download/068000000000061')));
+    const nativeDiagnostic = JSON.parse(await fixture.evaluate(() => window.quickViewDiagnoseFile()));
+    assert.equal(nativeDiagnostic.lookup.method, 'ui-record-api');
+    assert.equal(nativeDiagnostic.lookup.resolved, true);
+    assert.equal(nativeDiagnostic.lookup.httpStatus, 200);
+    await fixture.keyboard.press('Escape');
+    await fixture.evaluate(() => window.fixturePreviewMode = 'mismatch');
+    await fixture.mouse.move(5, 5);
+    const beforeWrongRecord = downloads;
+    await fixture.locator('#native-office').hover(); await fixture.waitForTimeout(600);
+    assert.equal(downloads, beforeWrongRecord, 'native metadata for another document must be rejected');
+    await fixture.keyboard.press('Escape');
+    for (const [mode, state] of [['forbidden', 'record-api-request-failed'], ['no-version', 'record-api-version-unavailable'], ['bad-version', 'record-api-version-unavailable']]) {
+      await fixture.evaluate(mode => window.fixturePreviewMode = mode, mode);
+      await fixture.mouse.move(5, 5);
+      const before = downloads;
+      await fixture.locator('#native-office').hover(); await fixture.waitForTimeout(650);
+      assert.equal(downloads, before, 'failed metadata must not request another file or original Office binary');
+      const result = JSON.parse(await fixture.evaluate(() => window.quickViewDiagnoseFile()));
+      assert.equal(result.lookup.state, state);
+      if (mode === 'forbidden') assert.equal(result.lookup.httpStatus, 403);
+      await fixture.keyboard.press('Escape');
+    }
+    await fixture.evaluate(() => {
+      window.fixturePreviewMode = 'success'; window.fixturePreviewDelay = 900;
+      document.querySelector('#native-office').href = '/lightning/r/ContentDocument/069000000000062/view';
+      document.querySelector('tbody').insertAdjacentHTML('beforeend', '<tr><td><a id="replacement-image" href="/lightning/r/ContentDocument/069000000000071/view">replacement.png</a></td></tr>');
+    });
+    await fixture.locator('#replacement-image').scrollIntoViewIfNeeded(); await fixture.waitForTimeout(150);
+    await fixture.mouse.move(5, 5);
+    await fixture.locator('#native-office').hover(); await fixture.waitForTimeout(350);
+    const replacementRequest = fixture.waitForResponse(response => response.url().includes('/download/069000000000071'), { timeout: 5000 });
+    await fixture.locator('#replacement-image').hover(); await replacementRequest;
+    await fixture.waitForTimeout(1000);
+    assert.ok(!previewRequests.some(url => url.includes('versionId=068000000000062')), 'late native metadata must not replace the new image preview');
     await fixture.keyboard.press('Escape');
     await settings.locator('#enabled').uncheck();
     await settings.waitForFunction(() => document.querySelector('#save-status').textContent === 'Settings saved locally');

@@ -34,7 +34,28 @@
       return url.href;
     } catch { return null; }
   }
-  function sources({ id, versionId, image, existingURL, scale = 100 }, base = location.href) {
+  function kind(title, signals = '') {
+    const extension = String(title).match(/\.([a-z0-9]+)(?:$|\s)/i)?.[1].toLowerCase();
+    if (['zip', 'rar', '7z', 'tar', 'gz'].includes(extension)) return 'archive';
+    if (['csv', 'json'].includes(extension)) return extension;
+    if (['txt', 'log', 'md', 'xml', 'yaml', 'yml'].includes(extension)) return 'text';
+    if (['ppt', 'pptx', 'doc', 'docx', 'xls', 'xlsx', 'pdf', 'rtf', 'odt', 'ods', 'odp'].includes(extension)) return 'document';
+    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif'].includes(extension)) return 'image';
+    if (extension && !/^\d+$/.test(extension)) return 'unknown';
+    if (/(?:^|[\s/#_-])csv(?:$|[\s_-])/i.test(signals)) return 'csv';
+    if (/(?:^|[\s/#_-])json(?:$|[\s_-])/i.test(signals)) return 'json';
+    if (/(?:^|[\s/#_-])(?:txt|text)(?:$|[\s_-])/i.test(signals)) return 'text';
+    if (/(?:^|[\s/#_-])(?:excel|word|ppt|powerpoint|pdf)(?:$|[\s_-])/i.test(signals)) return 'document';
+    return /(?:^|[\s/#_-])(?:image|png|jpe?g|gif|webp|bmp|avif)(?:$|[\s_-])/i.test(signals) ? 'image' : 'unknown';
+  }
+  function originalURL(reference, base = location.href) {
+    const resolved = fileId(reference);
+    if (!resolved) return null;
+    if (resolved.startsWith('00P')) return new URL(`/servlet/servlet.FileDownload?file=${resolved}`, base).href;
+    return new URL(`/sfc/servlet.shepherd/${resolved.startsWith('068') ? 'version' : 'document'}/download/${resolved}`, base).href;
+  }
+  function sources({ id, versionId, image, kind: fileKind, existingURL, scale = 100 }, base = location.href) {
+    if (fileKind === 'archive') return [];
     const result = [];
     const existing = existingURL && safeURL(existingURL, base);
     if (existing && /\/renditionDownload(?:\?|$)/.test(existing)) result.push(existing);
@@ -75,5 +96,5 @@
       fill: 'both'
     });
   }
-  globalThis.QuickView = Object.freeze({ defaults, normalize, fileId, safeURL, sources, previewSize, animate });
+  globalThis.QuickView = Object.freeze({ defaults, normalize, fileId, safeURL, sources, kind, originalURL, previewSize, animate });
 })();
