@@ -27,7 +27,7 @@
       const input = document.getElementById(key);
       if (input.type === 'checkbox') input.checked = value; else input.value = value;
       const output = document.getElementById(`${key}-value`);
-      if (output) output.textContent = key === 'scale' ? `${value}%` : `${value} ${key === 'delay' ? 'ms' : 'px'}`;
+      if (output) output.textContent = key === 'scale' ? `${value}%` : `${value} ${key === 'delay' || key === 'dialogDelay' ? 'ms' : 'px'}`;
     }
     document.querySelector('#color-value').textContent = settings.borderColor.toUpperCase();
     const preview = document.querySelector('#sample-preview');
@@ -79,6 +79,7 @@
   }
   form.addEventListener('submit', event => event.preventDefault());
   form.addEventListener('input', change);
+  form.addEventListener('change', change);
   document.querySelector('#theme').addEventListener('change', change);
   document.querySelector('#reset').addEventListener('click', () => { cancelPreviewMotion(); revision++; settings = Q.normalize(); paint(); save(); });
   document.querySelectorAll('.scene-switcher button').forEach(button => button.addEventListener('click', () => {

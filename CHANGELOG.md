@@ -2,6 +2,18 @@
 
 All notable changes to QuickView for Salesforce are recorded here.
 
+## [0.0.3] — 2026-10-05
+
+- Render extensionless TXT/LOG/MD/XML/YAML files as native text using Type cells and concatenated size/type metadata; text formats never request image renditions. Prefer original raster images at all sizes and larger known thumbnails before small existing thumbnails.
+- Add configurable dialog delay (1,000 ms default) and a dialog-preview toggle; expand both delay ranges to 5 seconds. Existing general hover preferences are preserved.
+- Exclude checkbox, label, and selection-cell interactions; cancel pending or focused previews immediately on entry or pointer movement.
+- Re-read local preferences when activating previews and returning to a Salesforce tab, so settings apply without page reloads even after a missed storage notification.
+- Dialog delay overrides the general delay. Recognize additional Salesforce modal containers, wait for stored preferences before activation, and handle change events from settings controls.
+- Observe viewport and document resizing as well as window resize events.
+- Recognize file-picker types from adjacent metadata when titles omit extensions.
+- Scale previews with both window dimensions, preserve media proportions when fitting height, and resize visible previews with the window.
+- Update settings, documentation, and release archive to 0.0.3. Picker behavior is covered by local fixtures; live-org confirmation is still needed.
+
 ## [0.0.2] — 2026-10-02
 
 ### Fixed

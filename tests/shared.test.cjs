@@ -27,7 +27,7 @@ test('existing URLs reject external hosts, credentials, scripts and non-Salesfor
 test('extension declares only local settings permission, all bundled paths exist', () => {
   const fs = require('node:fs'), path = require('node:path');
   const manifest = require('../extension/manifest.json');
-  assert.equal(manifest.version, '0.0.2'); assert.deepEqual(manifest.permissions, ['storage']);
+  assert.equal(manifest.version, '0.0.3'); assert.deepEqual(manifest.permissions, ['storage']);
   for (const file of [...manifest.content_scripts.flatMap(script => script.js), manifest.background.service_worker, manifest.options_ui.page, ...Object.values(manifest.icons)]) assert.ok(fs.existsSync(path.join(__dirname, '../extension', file)), file);
 });
 
@@ -61,7 +61,9 @@ test('preview sizing uses original viewport coordinates and fits large cards', (
   // A 640px screenshot represents one quarter of the original desktop viewport.
   assert.equal(Q.previewSize(settings, 2560, 1258).width * 640 / 2560, 292.5);
   const largest = Q.previewSize(Q.normalize({ scale: 500 }), 1440, 1050);
-  assert.equal(largest.width, 1416);
+  assert.ok(largest.width <= 1416);
+  assert.ok(Math.abs(largest.width / largest.height - 520 / 380) < .001);
+  assert.deepEqual(Q.previewSize(Q.normalize(), 1280, 900), { width: 260, height: 190 });
   assert.equal(largest.height + 40.5 + 2, 1026);
 });
 
@@ -107,4 +109,26 @@ test('stream reader stops at its byte budget and rejects login HTML', async () =
     globalThis.fetch = async () => new Response('<html>login</html>', { headers: { 'content-type': 'text/html' } });
     await assert.rejects(T.read(base, new AbortController().signal));
   } finally { globalThis.fetch = previous; }
+});
+
+
+test('dialog preferences default independently and preserve existing hover settings', () => {
+  const existing = Q.normalize({ delay: 450 });
+  assert.equal(existing.delay, 450);
+  assert.equal(existing.dialogDelay, 1000);
+  assert.equal(existing.dialogPreviews, true);
+  const configured = Q.normalize({ delay: 3000, dialogDelay: 9000, dialogPreviews: false });
+  assert.equal(configured.delay, 3000);
+  assert.equal(configured.dialogDelay, 5000);
+  assert.equal(configured.dialogPreviews, false);
+});
+
+
+test('text metadata uses native text and raster images prefer originals at every scale', () => {
+  for (const type of ['TXT', 'LOG', 'MD', 'XML', 'YAML']) assert.equal(Q.kind('Logs-2026-09-10 13_16_34', type), 'text');
+  for (const kind of ['text', 'csv', 'json']) assert.deepEqual(Q.sources({ id: '068000000000021', kind, existingURL: '/sfc/servlet.shepherd/version/renditionDownload?versionId=068000000000021' }, base), []);
+  const urls = Q.sources({ id: '069000000000001', versionId: '068000000000001', image: true, scale: 50, existingURL: '/sfc/servlet.shepherd/version/renditionDownload?rendition=THUMB120BY90&versionId=068000000000001' }, base);
+  assert.match(urls[0], /document\/download/);
+  assert.match(urls[1], /THUMB720BY480/);
+  assert.match(urls[2], /THUMB120BY90/);
 });

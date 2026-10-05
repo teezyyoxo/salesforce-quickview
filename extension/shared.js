@@ -1,7 +1,7 @@
 /* Shared settings and Salesforce URL resolution. No page content is persisted. */
 (() => {
   'use strict';
-  const defaults = Object.freeze({ enabled: true, theme: 'system', animation: 'none', scale: 100, delay: 250, radius: 12, borderWidth: 1, borderColor: '#d5dbe7', shadow: true, suppressTooltip: true, showName: true });
+  const defaults = Object.freeze({ enabled: true, theme: 'system', animation: 'none', scale: 100, delay: 250, dialogDelay: 1000, dialogPreviews: true, radius: 12, borderWidth: 1, borderColor: '#d5dbe7', shadow: true, suppressTooltip: true, showName: true });
   const bounded = (value, min, max, fallback) => Number.isFinite(Number(value)) ? Math.min(max, Math.max(min, Number(value))) : fallback;
   function normalize(value = {}) {
     value = value && typeof value === 'object' ? value : {};
@@ -10,10 +10,10 @@
     const legacyScale = Math.round(Math.max(Number(value.width) || 520, 520) / 520 * 100 / 5) * 5;
     const legacyHeightScale = Math.round(Math.max(Number(value.height) || 380, 380) / 380 * 100 / 5) * 5;
     result.scale = bounded(value.scale ?? Math.max(legacyScale, legacyHeightScale), 50, 500, defaults.scale);
-    for (const key of ['enabled', 'shadow', 'suppressTooltip', 'showName']) if (typeof value[key] === 'boolean') result[key] = value[key];
+    for (const key of ['enabled', 'shadow', 'suppressTooltip', 'showName', 'dialogPreviews']) if (typeof value[key] === 'boolean') result[key] = value[key];
     if (['system', 'light', 'dark'].includes(value.theme)) result.theme = value.theme;
     if (['none', 'fade', 'fall', 'scale-up', 'scale-down'].includes(value.animation)) result.animation = value.animation;
-    for (const [key, min, max] of [['delay', 0, 1500], ['radius', 0, 32], ['borderWidth', 0, 6]]) result[key] = bounded(value[key] ?? defaults[key], min, max, defaults[key]);
+    for (const [key, min, max] of [['delay', 0, 5000], ['dialogDelay', 0, 5000], ['radius', 0, 32], ['borderWidth', 0, 6]]) result[key] = bounded(value[key] ?? defaults[key], min, max, defaults[key]);
     if (/^#[\da-f]{6}$/i.test(value.borderColor)) result.borderColor = value.borderColor;
     return result;
   }
@@ -44,7 +44,7 @@
     if (extension && !/^\d+$/.test(extension)) return 'unknown';
     if (/(?:^|[\s/#_-])csv(?:$|[\s_-])/i.test(signals)) return 'csv';
     if (/(?:^|[\s/#_-])json(?:$|[\s_-])/i.test(signals)) return 'json';
-    if (/(?:^|[\s/#_-])(?:txt|text)(?:$|[\s_-])/i.test(signals)) return 'text';
+    if (/(?:^|[\s/#_-])(?:txt|text|log|md|xml|yaml|yml)(?:$|[\s_-])/i.test(signals)) return 'text';
     if (/(?:^|[\s/#_-])(?:excel|word|ppt|powerpoint|pdf)(?:$|[\s_-])/i.test(signals)) return 'document';
     return /(?:^|[\s/#_-])(?:image|png|jpe?g|gif|webp|bmp|avif)(?:$|[\s_-])/i.test(signals) ? 'image' : 'unknown';
   }
@@ -55,16 +55,17 @@
     return new URL(`/sfc/servlet.shepherd/${resolved.startsWith('068') ? 'version' : 'document'}/download/${resolved}`, base).href;
   }
   function sources({ id, versionId, image, kind: fileKind, existingURL, scale = 100 }, base = location.href) {
-    if (fileKind === 'archive') return [];
+    if (['archive', 'csv', 'json', 'text'].includes(fileKind)) return [];
     const result = [];
     const existing = existingURL && safeURL(existingURL, base);
-    if (existing && /\/renditionDownload(?:\?|$)/.test(existing)) result.push(existing);
+    // Prefer the largest known thumbnail over an existing small row thumbnail.
     const version = fileId(versionId) || (id?.startsWith('068') ? id : null);
     if (version?.startsWith('068')) {
       const url = new URL('/sfc/servlet.shepherd/version/renditionDownload', base);
       url.search = new URLSearchParams({ rendition: 'THUMB720BY480', versionId: version, operationContext: 'CHATTER' });
       result.push(url.href);
     }
+    if (existing && /\/renditionDownload(?:\?|$)/.test(existing)) result.push(existing);
     // Original downloads are restricted to identified raster images. Documents never load here.
     if (image && fileId(id)) {
       if (id.startsWith('00P')) {
@@ -73,16 +74,19 @@
         result.push(url.href);
       } else {
         const original = new URL(`/sfc/servlet.shepherd/${id.startsWith('068') ? 'version' : 'document'}/download/${id}`, base).href;
-        if (scale > 100) result.unshift(original); else result.push(original);
+        result.unshift(original);
       }
     }
     return [...new Set(result)];
   }
   function previewSize(settings, viewportWidth, viewportHeight, nameHeight = 40.5) {
-    return {
-      width: Math.min(520 * settings.scale / 100, Math.max(120, viewportWidth - 24)),
-      height: Math.min(380 * settings.scale / 100, Math.max(72, viewportHeight - 24 - (settings.showName ? nameHeight : 0) - settings.borderWidth * 2))
-    };
+    const viewportScale = Math.min(viewportWidth / 2560, viewportHeight / 1258);
+    const desiredWidth = 520 * settings.scale / 100 * viewportScale;
+    const desiredHeight = desiredWidth * 380 / 520;
+    const availableWidth = Math.max(1, viewportWidth - 24);
+    const availableHeight = Math.max(1, viewportHeight - 24 - (settings.showName ? nameHeight : 0) - settings.borderWidth * 2);
+    const fit = Math.min(1, availableWidth / desiredWidth, availableHeight / desiredHeight);
+    return { width: desiredWidth * fit, height: desiredHeight * fit };
   }
   function animate(element, mode, exiting = false) {
     if (mode === 'none' || globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return null;

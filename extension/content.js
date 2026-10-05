@@ -6,7 +6,14 @@
   let settings = Q.normalize(), active = null, timer, loadTimer, generation = 0, point = { x: 0, y: 0 };
   let host, panel, image, status, name, media, motion, closing = false;
   let textView, textNotice, textController, metadataController;
+  let activation = 0, settingsRevision = 0;
+  let settingsReady = !globalThis.chrome?.storage?.local;
   const titles = new Map();
+  const dialogSelector = '[role="dialog"], [role="alertdialog"], [aria-modal="true"], dialog, .slds-modal, .slds-modal__container, .slds-modal__content, .modal-container, .modal-body, .modal, .uiModal, .forceContentFilePicker, .forceContentFilePickerDesktop, .forceContentFilePickerModal';
+  const selectionSelector = 'input, label, [role="checkbox"], .slds-checkbox, .slds-checkbox_faux, .slds-checkbox--faux, .slds-checkbox_button, .slds-checkbox-button, [data-selection-cell]';
+  function selectionEvent(event) {
+    return event.composedPath().some(node => node instanceof Element && (node.matches(selectionSelector) || node.matches('td, [role="gridcell"]') && !!node.querySelector('input[type="checkbox"], [role="checkbox"]')));
+  }
   const systemDark = matchMedia('(prefers-color-scheme: dark)');
 
   const attachmentSelector = '.emailMessage__attachment, .slds-file, .emailuiAttachment, .emailuiAttachmentItem, .emailAttachment, .email-attachment, .forceContentFileCard, [data-attachment-id], [data-file-id], [data-content-document-id], [data-content-version-id]';
@@ -20,6 +27,7 @@
   }
   function locate(event) {
     const path = event.composedPath();
+    if (selectionEvent(event)) return null;
     const anchor = path.find(node => node instanceof Element && node.matches('a, button, [role="link"], [role="button"], [data-file-link], .slds-file__title'));
     if (!anchor || host?.contains(anchor)) return null;
     // Inline email-body images are not attachment titles, including linked images.
@@ -27,7 +35,7 @@
     const candidate = anchor.closest(attachmentSelector);
     const attachment = candidate?.matches('tr, [role="row"]') ? null : candidate;
     const tableRow = anchor.closest('tr, [role="row"]');
-    const row = attachment || tableRow || anchor.closest('.slds-media');
+    const row = attachment || tableRow || anchor.closest('.slds-media, .slds-file-selector__list-item, li');
     // Each attachment has its own boundary. Never borrow a sibling attachment's ID.
     let id = metadataId(anchor) || metadataId(attachment);
     const cell = anchor.closest('td, th, [role="gridcell"], [role="rowheader"]');
@@ -37,12 +45,22 @@
     const aura = !id && anchor.matches('a[data-index]') && !!anchor.closest('.emailMessage__attachment') && !!anchor.closest('.forceChatterFeedAuxBodyEmailMessage');
     if (!id && !aura) return null;
     const title = anchor.dataset.fileName || attachment?.dataset.fileName || anchor.querySelector('.slds-file__text, .slds-truncate')?.textContent.trim() || anchor.textContent.trim() || anchor.getAttribute('title') || anchor.getAttribute('aria-label') || 'File preview';
-    const signals = [title, anchor.dataset.fileType, row?.dataset.fileType];
+    const signals = [title, anchor.dataset.fileType, row?.dataset.fileType, anchor.dataset.fileExtension, row?.dataset.fileExtension];
+    // Salesforce often separates the extension into a Type cell, or concatenates
+    // it with the size in attachment-card text (for example, "326KBtxt").
+    row?.querySelectorAll('td, [role="gridcell"], .slds-file__type, [data-file-type], [data-file-extension]').forEach(node => {
+      signals.push(node.textContent.trim(), node.dataset.fileType, node.dataset.fileExtension);
+    });
     row?.querySelectorAll('svg use, img, [data-key], [data-doctype]').forEach(node => signals.push(node.getAttribute('href'), node.getAttribute('xlink:href'), node.getAttribute('alt'), node.getAttribute('data-key'), node.getAttribute('data-doctype')));
-    const kind = Q.kind(title, signals.filter(Boolean).join(' '));
-    const versionId = Q.fileId(anchor.dataset.versionId || anchor.dataset.contentVersionId || row?.dataset.versionId || row?.dataset.contentVersionId);
+    // File-picker titles omit extensions; the adjacent metadata ends with the file type.
+    const pickerType = row?.textContent.match(/(?:•|·|\b\d+(?:\.\d+)?\s*(?:bytes|[kmgt]?b))\s*(?:[•·|]\s*)?(png|jpe?g|gif|webp|bmp|avif|csv|json|txt|log|md|xml|ya?ml|pptx?|docx?|xlsx?|pdf|zip|rar|7z)\s*$/i)?.[1];
+    const kind = Q.kind(pickerType ? `file.${pickerType}` : title, signals.filter(Boolean).join(' '));
+    let versionId = Q.fileId(anchor.dataset.versionId || anchor.dataset.contentVersionId || row?.dataset.versionId || row?.dataset.contentVersionId);
     const existingURL = anchor.getAttribute('href')?.includes('/renditionDownload') ? anchor.getAttribute('href') : row?.querySelector('img[src*="/sfc/servlet.shepherd/"], a[href*="/renditionDownload"]')?.getAttribute('src') || row?.querySelector('a[href*="/renditionDownload"]')?.getAttribute('href');
-    return { anchor, row, id, title, aura, kind, image: kind === 'image', versionId, existingURL };
+    if (!versionId && existingURL) {
+      try { const reference = Q.fileId(new URL(existingURL, location.href).searchParams.get('versionId')); if (reference?.startsWith('068')) versionId = reference; } catch { /* Ignore malformed thumbnail URLs. */ }
+    }
+    return { anchor, row, id, title, aura, kind, dialog: path.some(node => node instanceof Element && !!node.closest(dialogSelector)), image: kind === 'image', versionId, existingURL };
   }
   function suppress(file) {
     if (!settings.suppressTooltip) return;
@@ -108,7 +126,7 @@
     closing = false;
   }
   function hide(immediate = false) {
-    clearTimeout(timer); clearTimeout(loadTimer); generation++;
+    clearTimeout(timer); clearTimeout(loadTimer); generation++; activation++;
     textController?.abort(); textController = null;
     metadataController?.abort(); metadataController = null;
     active = null; restoreTitles();
@@ -219,24 +237,56 @@
     }
     attempt();
   }
-  function enter(event, keyboard = false) {
-    if (!settings.enabled || (!keyboard && event.pointerType === 'touch')) return;
+  function applySettings(value) {
+    settingsRevision++;
+    settingsReady = true;
+    const next = Q.normalize(value);
+    if (JSON.stringify(next) !== JSON.stringify(settings)) {
+      settings = next;
+      const pendingActivation = activation;
+      hide(true);
+      activation = pendingActivation;
+    }
+  }
+  async function refreshSettings() {
+    if (!globalThis.chrome?.storage?.local) return;
+    const revision = settingsRevision;
+    try {
+      const data = await chrome.storage.local.get('settings');
+      if (revision === settingsRevision) applySettings(data.settings);
+    } catch { /* Retain the last readable preferences. */ }
+  }
+  async function enter(event, keyboard = false) {
+    if (selectionEvent(event)) return hide(true);
+    if (!keyboard && event.pointerType === 'touch') return;
     const file = locate(event);
-    if (!file) return;
+    if (!file) { if (!keyboard) hide(true); return; }
+    // Read local storage on activation as well as listening for changes. This also
+    // catches updates made while this Salesforce tab was suspended or unfocused.
+    const pendingActivation = ++activation;
+    await refreshSettings();
+    if (pendingActivation !== activation) return;
+    if (!settingsReady || !settings.enabled || !file?.anchor.isConnected) return;
+    if (file.dialog && !settings.dialogPreviews) { hide(true); return; }
     if (active?.anchor === file.anchor) return;
     hide(true); active = { ...file, keyboard }; suppress(active);
-    timer = setTimeout(() => show(active), settings.delay);
+    const pending = active;
+    timer = setTimeout(() => { if (active === pending) show(pending); }, file.dialog ? settings.dialogDelay : settings.delay);
   }
   document.addEventListener('pointerover', event => enter(event), true);
-  document.addEventListener('pointermove', event => { point = { x: event.clientX, y: event.clientY }; position(); }, { passive: true });
-  document.addEventListener('pointerout', event => { if (active && !active.keyboard && event.composedPath().includes(active.anchor) && !active.anchor.contains(event.relatedTarget)) hide(); }, true);
+  document.addEventListener('pointermove', event => { if (selectionEvent(event)) return hide(true); point = { x: event.clientX, y: event.clientY }; position(); }, { passive: true });
+  document.addEventListener('pointerout', event => { if (!active && !event.target.contains?.(event.relatedTarget)) activation++; if (active && !active.keyboard && event.composedPath().includes(active.anchor) && !active.anchor.contains(event.relatedTarget)) hide(); }, true);
   document.addEventListener('focusin', event => enter(event, true), true);
-  document.addEventListener('focusout', event => { if (active?.keyboard && event.composedPath().includes(active.anchor)) hide(); }, true);
+  document.addEventListener('focusout', event => { activation++; if (active?.keyboard && event.composedPath().includes(active.anchor)) hide(); }, true);
   document.addEventListener('keydown', event => { if (event.key === 'Escape') hide(); }, true);
+  document.addEventListener('pointerdown', () => hide(true), true);
   document.addEventListener('click', hide, true);
   document.addEventListener('scroll', hide, { capture: true, passive: true });
-  window.addEventListener('blur', hide); window.addEventListener('resize', hide);
-  document.addEventListener('visibilitychange', () => { if (document.hidden) hide(); });
+  window.addEventListener('blur', hide); window.addEventListener('resize', appearance);
+  window.visualViewport?.addEventListener('resize', appearance);
+  new ResizeObserver(appearance).observe(document.documentElement);
+  window.addEventListener('focus', refreshSettings);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) hide(); else refreshSettings(); });
   const observer = new MutationObserver(() => {
     if (active && !active.anchor.isConnected) hide();
     else if (active) suppress(active);
@@ -245,10 +295,10 @@
   systemDark.addEventListener('change', appearance);
   matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change', () => hide(true));
   if (globalThis.chrome?.storage?.local) {
-    chrome.storage.local.get('settings').then(data => { settings = Q.normalize(data.settings); }).catch(() => {});
+    refreshSettings().finally(() => { settingsReady = true; });
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local' || !changes.settings) return;
-      settings = Q.normalize(changes.settings.newValue); hide(true);
+      applySettings(changes.settings.newValue);
     });
   }
 })();

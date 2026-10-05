@@ -4,7 +4,7 @@
 
 QuickView is a Chrome extension that adds a floating preview when you hover over a Salesforce file name. It is designed for the Files tab and related Files lists in Lightning, including the Service Console. Separately listed attachments under **Feed → Email** use the same hover preview.
 
-**Version 0.0.2 · Document and text previews · Manifest V3**
+**Version 0.0.3 · Document and text previews · Manifest V3**
 
 The concept and original browser-console prototype came from [@jorgestocker](https://github.com/jorgestocker), who gave permission to develop the idea into an extension. This repository contains a new implementation; it does not include or derive from his original JavaScript.
 
@@ -22,7 +22,7 @@ The concept and original browser-console prototype came from [@jorgestocker](htt
 
 ## Get started
 
-1. Download this repository, or extract the [release archive](dist/quickview-for-salesforce-0.0.2.zip) created by `npm run package`.
+1. Download this repository, or extract the [release archive](dist/quickview-for-salesforce-0.0.3.zip) created by `npm run package`.
 2. Open `chrome://extensions` in Chrome.
 3. Enable **Developer mode** in the upper-right corner.
 4. Click **Load unpacked** and select the **`extension/`** directory. If using the archive, select its extracted directory, which contains `manifest.json`.
@@ -62,7 +62,7 @@ Text previews read at most **256 KiB** of UTF-8 content, then cancel the stream.
 
 Salesforce’s Shepherd rendition URLs are **internal, unsupported endpoints** and may change. Salesforce also documents cross-domain authentication limitations for them. See [Salesforce’s guidance on internal rendition URLs](https://help.salesforce.com/s/articleView?id=005227037&language=en_US&type=1). QuickView uses these preview routes because private case attachments are not public CMS assets. It does not bypass permissions or create public sharing links.
 
-Image fallback can load the **full original image**, so large images consume bandwidth and browser memory. Files are loaded only after the hover delay; there is no prefetching. Images are not copied into extension storage. Salesforce response caching follows the browser’s normal rules.
+Image previews first request the **full original image**, so large images consume bandwidth and browser memory. Files are loaded only after the hover delay; there is no prefetching. Images are not copied into extension storage. Salesforce response caching follows the browser’s normal rules.
 
 ### Feed → Email attachments
 
@@ -78,8 +78,10 @@ Open the extension’s toolbar icon, or choose **Extension options** from its me
 | --- | --- | --- |
 | Hover previews | On | On / off |
 | Theme | System | System / Light / Dark |
-| Preview size | 100% | 50–500%; 100% = 520 × 380 px |
-| Hover delay | 250 ms | 0–1,500 ms |
+| Preview size | 100% | 50–500%; 100% = 520 × 380 px in a 2560 × 1258 px window |
+| Hover delay | 250 ms | 0–5,000 ms |
+| Dialog hover delay | 1,000 ms | 0–5,000 ms; overrides general delay in dialogs |
+| Previews in dialogs | On | Disable to keep file pickers clear |
 | Preview animation | None | None / Fade in–out / Fall in / Scale up / Scale down |
 | Corner radius | 12 px | 0–32 px |
 | Border width | 1 px | 0–6 px |
@@ -90,7 +92,7 @@ Open the extension’s toolbar icon, or choose **Extension options** from its me
 
 Animations are off by default. Fade, fall-in, and scale options animate both arrival and dismissal. Use **Replay animation** in settings to try the selected effect. The system’s reduced-motion preference disables these effects.
 
-Settings save automatically. **Restore defaults** resets every preference. System theme follows your operating system. The live sample uses selectable masked Salesforce Files and Feed screenshots with an interactive dummy preview layered above them. These background assets are bundled locally. The sample uses the original 2560 px screenshot viewport as its reference and scales the entire card, including its text, padding, and borders; live previews scale from 520 × 380 px at 100% up to 2,600 × 1,900 px at 500%, limited to the viewport. Existing width/height preferences are converted to a percentage. Images preserve their aspect ratio and are never cropped.
+Settings save automatically. **Restore defaults** resets every preference. System theme follows your operating system. The live sample uses selectable masked Salesforce Files and Feed screenshots with an interactive dummy preview layered above them. These background assets are bundled locally. The sample uses the original 2560 px screenshot viewport as its reference and scales the entire card, including its text, padding, and borders; live previews use those same proportions relative to both window dimensions and shrink together to fit available space. Existing width/height preferences are converted to a percentage. Images preserve their aspect ratio and are never cropped.
 
 Tooltip suppression applies to native browser `title` attributes. Salesforce-created popovers are separate UI elements and may still appear. Accessible labels and file clicks remain intact.
 
@@ -145,7 +147,7 @@ Recreate the local demo screenshots with `npm run screenshots` (or set `CHROME_P
 
 The browser suite injects the production scripts into a fixture using a demo storage adapter. A separate `test:extension` smoke check loads the unpacked extension in Playwright Chromium, verifies real extension storage and options-page assets, and exercises manifest injection on locally fulfilled Salesforce-host fixture routes, including nested Aura attachment references, filename/index matching, and masked diagnostics; the automated tests do not contact a Salesforce org. Manual testing in the project owner’s org confirmed Files-tab and Feed email image previews. Office and text formats added in 0.0.2 and other org configurations still need live-org validation.
 
-`npm run package` creates `dist/quickview-for-salesforce-0.0.2.zip` containing only extension runtime files, ready to extract and load unpacked. It is not a signed Chrome Web Store package. Rebuild icon assets with `python3 scripts/icons.py`.
+`npm run package` creates `dist/quickview-for-salesforce-0.0.3.zip` containing only extension runtime files, ready to extract and load unpacked. It is not a signed Chrome Web Store package. Rebuild icon assets with `python3 scripts/icons.py`.
 
 ### Repository layout
 
@@ -165,7 +167,7 @@ docs/images/   README screenshots
 
 **“Preview unavailable” / “Text preview unavailable”:** QuickView resolved a reference but could not load a preview. The file may not have a rendition, its image type may not be discoverable, or your session/permissions may block loading. Click the file to use Salesforce’s viewer. If Salesforce’s own viewer fails, resolve that access issue first.
 
-**Preview is blurry:** Enlarged raster-image previews prefer the original image, with a Salesforce thumbnail as fallback when version metadata is available. Document thumbnails are requested at 720 × 480. Scaling a thumbnail enlarges its pixels without adding detail.
+**Preview is blurry:** Raster-image previews prefer the original image at every size, with a Salesforce thumbnail as fallback when version metadata is available. TXT, LOG, MD, XML, YAML, CSV, and JSON render as native text rather than image renditions. Document thumbnails are requested at 720 × 480. Scaling a thumbnail enlarges its pixels without adding detail.
 
 **The tooltip still appears:** QuickView suppresses native browser titles; it does not disable Salesforce’s custom tooltip components.
 
@@ -193,3 +195,7 @@ Planned improvements. Identifiers are stable references for discussions and issu
 QuickView is an independent project, not affiliated with or endorsed by Salesforce. The name is provisional. See [CHANGELOG.md](CHANGELOG.md) for version history.
 
 No distribution license has been selected yet; this repository does not currently grant an open-source license.
+
+Preview dimensions scale with both window dimensions relative to a 2560 × 1258 px reference window, preserving the media aspect ratio and fitting available height. File-picker metadata can identify types when filenames omit extensions.
+
+Raster image previews prefer original downloads at every preview size; thumbnails are fallbacks. Text formats render as native text, including extensionless titles with Salesforce Type cells or size/type metadata. Office previews remain Salesforce first-page image renditions.
